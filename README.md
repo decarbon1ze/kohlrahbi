@@ -108,6 +108,7 @@ kohlrahbi --help
 | -------------------------------- | ------------------------------------------------------------ |
 | `kohlrahbi ahb`                  | Extract AHB tables from `.docx` files                        |
 | `kohlrahbi conditions`           | Extract conditions and packages from `.docx` files           |
+| `kohlrahbi context`              | Export the explanatory text around the AHB tables (for agents) |
 | `kohlrahbi changehistory docx`   | Extract change histories from `.docx` files                  |
 | `kohlrahbi changehistory bnetza` | Download documents from a BNetzA URL and extract change histories |
 
@@ -168,6 +169,93 @@ This extracts all conditions and packages found in all AHBs (including the condi
 
 > [!NOTE]
 > The conditions collected here may be more comprehensive than those collected via `kohlrahbi ahb`, because `conditions` uses a different extraction routine.
+
+---
+
+### `kohlrahbi context` — Export the explanatory text around the AHB tables
+
+> [!NOTE]
+> This command also requires a local clone of the [edi_energy_mirror](https://github.com/Hochfrequenz/edi_energy_mirror/).
+
+```bash
+kohlrahbi context -eemp ../edi_energy_mirror/ --output-path ./output/ --format-version FV2610
+```
+
+The other commands only read tables; the text between them (rules like _"ist im BGM-Segment DE1001 der Qualifier Z41
+zu verwenden"_, the description of each use case, small tables of communication partners, …) is skipped. This command
+exports exactly that skipped text as a separate **context layer**, e.g. for agents and MCP servers:
+
+* **Structured layer** (unchanged): `flatahb`/`csv`/`xlsx`, `conditions.json`, `packages.json`, change histories.
+* **Context layer** (new): unstructured text only. It never repeats structured facts; it _points_ to them with
+  **anchors**, i.e. the keys of the structured layer.
+
+Everything outside the AHB tables, the package table and the change history is exported, split into **passages** (one
+per section, up to the next heading or AHB table). The title page and the disclaimer are skipped. Lists become `- `
+items, small tables become Markdown tables.
+
+Each anchor has a `kind`, a `value` and a `source` that tells how reliable it is:
+
+| `kind`               | example `value` | found in the text as                       |
+| -------------------- | --------------- | ------------------------------------------ |
+| `pruefidentifikator` | `13017`         | see `source` below                         |
+| `segment_group`      | `SG10`          | `SG10`, `SG 10`                            |
+| `segment`            | `DTM+163`       | `DTM+163`, `BGM-Segment` (→ `BGM`)         |
+| `data_element`       | `DE1001`        | `DE1001`, `DE 1001`, `Datenelement 1001`   |
+| `code`               | `Z41`           | `Qualifier Z41`, `Code Z41`                |
+| `condition`          | `492`           | `[492]`                                    |
+| `package`            | `1P`            | `[1P0..1]`                                 |
+| `ebd`                | `E_0623`        | `E_0623`                                   |
+
+| `source`           | meaning (strongest first)                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------- |
+| `explicit`         | the passage says it describes the Prüfi: `Tabellenspalte = … 13017`, `… Prüfidentifikator: 13025` |
+| `table_in_section` | the passage is in the same section as the AHB table of the Prüfi                                |
+| `section_scope`    | an `explicit` passage of an enclosing section names the Prüfi                                    |
+| `mention`          | the key is just mentioned (Prüfis only if they are known Prüfidentifikatoren)                   |
+
+The output is saved per EDIFACT format next to the other exports:
+
+```plaintext
+output/
+├── context_schemas/                 # JSON schemas of both file types
+│   ├── context_document.schema.json
+│   └── pruefi_context.schema.json
+└── MSCONS/
+    ├── flatahb/13017.json           # structured layer (kohlrahbi ahb)
+    └── context/                     # context layer (kohlrahbi context)
+        ├── AHB_MSCONS_3.2_….json    # all passages of the document
+        └── pruefi/13017.json        # only the passages with an anchor to 13017
+```
+
+`MSCONS/context/pruefi/13019.json` of FV2610 (shortened):
+
+```json
+{
+  "layer": "context",
+  "pruefidentifikator": "13019",
+  "edifact_format": "MSCONS",
+  "format_version": "FV2610",
+  "source_file": "AHB_MSCONS_3.2_20261001_99991231_20261001_ooox_12173.docx",
+  "passages": [
+    {
+      "id": "AHB_MSCONS_3.2_20261001_99991231_20261001_ooox_12173:0014",
+      "order": 14,
+      "heading_path": ["Zählerstände und Energiemengen", "Übertragung von Zählerständen und Energiemengen Strom", "Übertragung von Energiemengen Strom"],
+      "text": "Tabellenspalte = Energiemenge (Strom) 13019\n\nDieser Anwendungsfall dient zur Übertragung von Energiemengen im Falle: …",
+      "contains_table": true,
+      "anchors": [
+        { "kind": "pruefidentifikator", "value": "13019", "source": "explicit" },
+        { "kind": "segment", "value": "BGM", "source": "mention" },
+        { "kind": "data_element", "value": "DE1001", "source": "mention" },
+        { "kind": "code", "value": "Z41", "source": "mention" }
+      ]
+    }
+  ]
+}
+```
+
+A `pruefi/<pruefi>.json` file is written for every Prüfi of the document, even if no passage refers to it (then
+`passages` is empty), so a consumer can tell "no explanatory text" apart from "not exported".
 
 ---
 
