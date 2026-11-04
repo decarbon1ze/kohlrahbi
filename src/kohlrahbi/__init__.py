@@ -7,6 +7,7 @@ import typer
 from kohlrahbi.ahb.command import ahb_app
 from kohlrahbi.changehistory.command import changehistory_app
 from kohlrahbi.conditions.command import conditions_app
+from kohlrahbi.context.command import context_app
 from kohlrahbi.qualitymap.command import qualitymap_app
 from kohlrahbi.version import version
 
@@ -22,6 +23,9 @@ app = typer.Typer(help="Kohlrahbi CLI tool", no_args_is_help=True)
 app.add_typer(ahb_app, name="ahb", help="Scrape AHB documents for pruefidentifikatoren.")
 app.add_typer(changehistory_app, name="changehistory", help="Scrape change histories from EDIFACT documents.")
 app.add_typer(conditions_app, name="conditions", help="Scrape AHB documents for conditions.")
+app.add_typer(
+    context_app, name="context", help="Export the explanatory text around the AHB tables (unstructured context)."
+)
 app.add_typer(qualitymap_app, name="qualitymap", help="Scrape quality maps from AHB documents.")
 
 
