@@ -5,9 +5,10 @@ This module contains the UnfoldedAhbTable class.
 import copy
 import json
 import re
+from collections import Counter
 from functools import lru_cache
 from pathlib import Path
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 
 import pandas as pd
 from efoli import EdifactFormat, get_format_of_pruefidentifikator
@@ -23,6 +24,22 @@ from kohlrahbi.unfoldedahb.unfoldedahbtablemetadata import UnfoldedAhbTableMetaD
 
 _segment_group_pattern = re.compile(r"^SG\d+$")
 _segment_id_pattern = re.compile(r"^\d{5}$")
+
+#: the namespace of the line GUIDs of a flat AHB, see _assign_deterministic_guids
+_guid_namespace = uuid5(NAMESPACE_URL, "https://github.com/Hochfrequenz/kohlrahbi/flatahb")
+
+
+def _assign_deterministic_guids(pruefidentifikator: str, lines: list[AhbLine]) -> None:
+    """
+    Gives every line a GUID that is derived from the Prüfidentifikator and the content of the line.
+    Scraping the same AHB twice therefore yields the same GUIDs, and a line gets a new GUID iff its content changes.
+    Lines with the same content are told apart by the order in which they appear.
+    """
+    occurrences: Counter[str] = Counter()
+    for line in lines:
+        content = line.model_dump_json(exclude={"guid"})
+        occurrences[content] += 1
+        line.guid = uuid5(_guid_namespace, f"{pruefidentifikator}/{occurrences[content]}/{content}")
 
 
 def _lines_are_equal_when_ignoring_guid(line1: AhbLine, line2: AhbLine) -> bool:
@@ -327,7 +344,6 @@ class UnfoldedAhb(BaseModel):
             if _line_is_flatahb_line(unfolded_ahb_line):
                 lines.append(
                     AhbLine(
-                        guid=uuid4(),
                         segment_group_key=unfolded_ahb_line.segment_gruppe,
                         segment_code=unfolded_ahb_line.segment,
                         data_element=unfolded_ahb_line.datenelement,
@@ -340,6 +356,7 @@ class UnfoldedAhb(BaseModel):
                         index=unfolded_ahb_line.index,
                     )
                 )
+        _assign_deterministic_guids(self.meta_data.pruefidentifikator, lines)
         try:
             return FlatAnwendungshandbuch(meta=meta, lines=lines)
         except ValueError:

@@ -3,7 +3,11 @@ import pytest
 from kohlrahbi.models.anwendungshandbuch import AhbLine, AhbMetaInformation, FlatAnwendungshandbuch
 from kohlrahbi.unfoldedahb import UnfoldedAhbTableMetaData
 from kohlrahbi.unfoldedahb.unfoldedahbline import UnfoldedAhbLine
-from kohlrahbi.unfoldedahb.unfoldedahbtable import UnfoldedAhb, _line_is_flatahb_line
+from kohlrahbi.unfoldedahb.unfoldedahbtable import (
+    UnfoldedAhb,
+    _assign_deterministic_guids,
+    _line_is_flatahb_line,
+)
 
 
 class TestUnfoldedAhbTable:
@@ -190,6 +194,34 @@ class TestUnfoldedAhbTable:
             assert expected_ahb_line == ahb_line
 
         assert expected_flat_ahb == flat_ahb
+
+    @staticmethod
+    def _lines_with_guids(pruefidentifikator: str, names: list[str]) -> list[AhbLine]:
+        lines = [AhbLine(segment_code="LOC", value_pool_entry=None, name=name, index=0) for name in names]
+        _assign_deterministic_guids(pruefidentifikator, lines)
+        return lines
+
+    def test_guids_are_the_same_for_the_same_ahb(self) -> None:
+        first = self._lines_with_guids("11042", ["Marktlokation", "Messlokation"])
+        second = self._lines_with_guids("11042", ["Marktlokation", "Messlokation"])
+        assert all(line.guid is not None for line in first)
+        assert [line.guid for line in first] == [line.guid for line in second]
+
+    def test_guids_differ_between_pruefidentifikatoren(self) -> None:
+        guids_11042 = {line.guid for line in self._lines_with_guids("11042", ["Marktlokation", "Messlokation"])}
+        guids_11043 = {line.guid for line in self._lines_with_guids("11043", ["Marktlokation", "Messlokation"])}
+        assert guids_11042.isdisjoint(guids_11043)
+
+    def test_lines_with_the_same_content_get_different_guids(self) -> None:
+        lines = self._lines_with_guids("11042", ["Marktlokation", "Marktlokation", "Marktlokation"])
+        assert len({line.guid for line in lines}) == 3
+
+    def test_only_a_changed_line_gets_a_new_guid(self) -> None:
+        before = self._lines_with_guids("11042", ["Marktlokation", "Messlokation", "Netzlokation"])
+        after = self._lines_with_guids("11042", ["Marktlokation", "Tranche", "Netzlokation"])
+        assert before[0].guid == after[0].guid
+        assert before[1].guid != after[1].guid
+        assert before[2].guid == after[2].guid
 
     def test_convert_to_dataframe(self) -> None:
         pass
